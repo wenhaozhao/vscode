@@ -7,7 +7,7 @@
 
 import * as nls from 'vs/nls';
 import * as browser from 'vs/base/browser/browser';
-import { IMenubarMenu, IMenubarMenuItemAction, IMenubarMenuItemSubmenu, IMenubarKeybinding } from 'vs/platform/menubar/common/menubar';
+import { IMenubarMenu, IMenubarMenuItemAction, IMenubarMenuItemSubmenu, IMenubarKeybinding, IMenubarService, IMenubarData } from 'vs/platform/menubar/common/menubar';
 import { IMenuService, MenuId, IMenu, SubmenuItemAction } from 'vs/platform/actions/common/actions';
 import { IThemeService, registerThemingParticipant, ITheme, ICssStyleCollector } from 'vs/platform/theme/common/themeService';
 import { IWindowService, MenuBarVisibility, IWindowsService } from 'vs/platform/windows/common/windows';
@@ -122,7 +122,8 @@ export class MenubarControl extends Disposable {
 		@IConfigurationService private configurationService: IConfigurationService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
 		@IUriLabelService private uriLabelService: IUriLabelService,
-		@IUpdateService private updateService: IUpdateService
+		@IUpdateService private updateService: IUpdateService,
+		@IMenubarService private menubarService: IMenubarService
 	) {
 
 		super();
@@ -434,14 +435,13 @@ export class MenubarControl extends Disposable {
 			this.setupCustomMenubar();
 		}
 
-		// TODO@sbatten Uncomment to bring back dynamic menubar
-		// else {
-		// 	// Send menus to main process to be rendered by Electron
-		// 	const menubarData = {};
-		// 	if (this.getMenubarMenus(menubarData)) {
-		// 		this.menubarService.updateMenubar(this.windowService.getCurrentWindowId(), menubarData, this.getAdditionalKeybindings());
-		// 	}
-		// }
+		else {
+			// Send menus to main process to be rendered by Electron
+			const menubarData = {};
+			if (this.getMenubarMenus(menubarData)) {
+				this.menubarService.updateMenubar(this.windowService.getCurrentWindowId(), menubarData, this.getAdditionalKeybindings());
+			}
+		}
 	}
 
 	private setupMenubar(): void {
@@ -908,33 +908,33 @@ export class MenubarControl extends Disposable {
 		}
 	}
 
-	// private getAdditionalKeybindings(): Array<IMenubarKeybinding> {
-	// 	const keybindings = [];
-	// 	if (isMacintosh) {
-	// 		keybindings.push(this.getMenubarKeybinding('workbench.action.quit'));
-	// 	}
+	private getAdditionalKeybindings(): Array<IMenubarKeybinding> {
+		const keybindings = [];
+		if (isMacintosh) {
+			keybindings.push(this.getMenubarKeybinding('workbench.action.quit'));
+		}
 
-	// 	return keybindings;
-	// }
+		return keybindings;
+	}
 
-	// private getMenubarMenus(menubarData: IMenubarData): boolean {
-	// 	if (!menubarData) {
-	// 		return false;
-	// 	}
+	private getMenubarMenus(menubarData: IMenubarData): boolean {
+		if (!menubarData) {
+			return false;
+		}
 
-	// 	for (let topLevelMenuName of Object.keys(this.topLevelMenus)) {
-	// 		const menu = this.topLevelMenus[topLevelMenuName];
-	// 		let menubarMenu: IMenubarMenu = { items: [] };
-	// 		this.populateMenuItems(menu, menubarMenu);
-	// 		if (menubarMenu.items.length === 0) {
-	// 			// Menus are incomplete
-	// 			return false;
-	// 		}
-	// 		menubarData[topLevelMenuName] = menubarMenu;
-	// 	}
+		for (let topLevelMenuName of Object.keys(this.topLevelMenus)) {
+			const menu = this.topLevelMenus[topLevelMenuName];
+			let menubarMenu: IMenubarMenu = { items: [] };
+			this.populateMenuItems(menu, menubarMenu);
+			if (menubarMenu.items.length === 0) {
+				// Menus are incomplete
+				return false;
+			}
+			menubarData[topLevelMenuName] = menubarMenu;
+		}
 
-	// 	return true;
-	// }
+		return true;
+	}
 
 	private isCurrentMenu(menuIndex: number): boolean {
 		if (!this.focusedMenu) {
