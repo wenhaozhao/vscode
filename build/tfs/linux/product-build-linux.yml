@@ -1,3 +1,10 @@
+resources:
+  containers:
+  - container: vscode
+    image: joaomoreno/vscode-linux-build-agent:x64
+
+container: vscode
+
 steps:
 - task: NodeTool@0
   inputs:
