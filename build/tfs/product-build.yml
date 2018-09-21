@@ -1,3 +1,8 @@
+resources:
+  containers:
+  - container: vscode-x64
+    image: joaomoreno/vscode-linux-build-agent:x64
+
 jobs:
 - job: Windows
   condition: eq(variables['VSCODE_BUILD_WIN32'], 'true')
@@ -23,6 +28,7 @@ jobs:
     vmImage: 'Ubuntu 16.04'
   variables:
     VSCODE_ARCH: x64
+  container: vscode-x64
   steps:
   - template: linux/product-build-linux.yml
 
