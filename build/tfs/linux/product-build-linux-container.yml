@@ -12,6 +12,13 @@ variables:
 container: vscode-x64
 
 steps:
+- task: NodeTool@0
+  inputs:
+    versionSpec: "8.9.1"
+
+- task: geeklearningio.gl-vsts-tasks-yarn.yarn-installer-task.YarnInstaller@2
+  inputs:
+    versionSpec: "1.9.4"
 
 - script: |
     set -e
