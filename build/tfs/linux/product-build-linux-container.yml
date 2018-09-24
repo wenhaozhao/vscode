@@ -9,8 +9,6 @@ pool:
 variables:
   VSCODE_ARCH: x64
 
-container: vscode-x64
-
 steps:
 - script: |
     echo hello world
