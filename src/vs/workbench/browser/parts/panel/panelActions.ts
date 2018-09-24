@@ -170,7 +170,7 @@ export class PanelActivityAction extends ActivityAction {
 	}
 }
 
-export class SwitchPanelItemAction extends Action {
+export class SwitchPanelViewAction extends Action {
 
 	constructor(
 		id: string,
@@ -197,7 +197,7 @@ export class SwitchPanelItemAction extends Action {
 	}
 }
 
-export class PreviousPanelViewAction extends SwitchPanelItemAction {
+export class PreviousPanelViewAction extends SwitchPanelViewAction {
 
 	static readonly ID = 'workbench.action.previousPanelView';
 	static LABEL = nls.localize('previousPanelView', 'Previous Panel View');
@@ -215,7 +215,7 @@ export class PreviousPanelViewAction extends SwitchPanelItemAction {
 	}
 }
 
-export class NextPanelViewAction extends SwitchPanelItemAction {
+export class NextPanelViewAction extends SwitchPanelViewAction {
 
 	static readonly ID = 'workbench.action.nextPanelView';
 	static LABEL = nls.localize('nextPanelView', 'Next Panel View');
