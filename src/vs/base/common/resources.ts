@@ -5,7 +5,7 @@
 'use strict';
 
 import * as paths from 'vs/base/common/paths';
-import URI from 'vs/base/common/uri';
+import { URI } from 'vs/base/common/uri';
 import { equalsIgnoreCase } from 'vs/base/common/strings';
 import { Schemas } from 'vs/base/common/network';
 import { isLinux, isWindows } from 'vs/base/common/platform';
@@ -30,7 +30,7 @@ export function basenameOrAuthority(resource: URI): string {
  * @param base A uri which is "longer"
  * @param parentCandidate A uri which is "shorter" then `base`
  */
-export function isEqualOrParent(base: URI, parentCandidate: URI, ignoreCase?: boolean): boolean {
+export function isEqualOrParent(base: URI, parentCandidate: URI, ignoreCase = hasToIgnoreCase(base)): boolean {
 	if (base.scheme === parentCandidate.scheme) {
 		if (base.scheme === Schemas.file) {
 			return paths.isEqualOrParent(fsPath(base), fsPath(parentCandidate), ignoreCase);
@@ -46,7 +46,7 @@ function isEqualAuthority(a1: string, a2: string, ignoreCase?: boolean) {
 	return a1 === a2 || ignoreCase && a1 && a2 && equalsIgnoreCase(a1, a2);
 }
 
-export function isEqual(first: URI, second: URI, ignoreCase?: boolean): boolean {
+export function isEqual(first: URI, second: URI, ignoreCase = hasToIgnoreCase(first)): boolean {
 	const identityEquals = (first === second);
 	if (identityEquals) {
 		return true;
@@ -124,7 +124,7 @@ export function normalizePath(resource: URI): URI {
  * Returns the fsPath of an URI where the drive letter is not normalized.
  * See #56403.
  */
-function fsPath(uri: URI): string {
+export function fsPath(uri: URI): string {
 	let value: string;
 	if (uri.authority && uri.path.length > 1 && uri.scheme === 'file') {
 		// unc path: file://shares/c$/far/boo
@@ -186,4 +186,3 @@ export function isMalformedFileUri(candidate: URI): URI | undefined {
 	}
 	return void 0;
 }
-
