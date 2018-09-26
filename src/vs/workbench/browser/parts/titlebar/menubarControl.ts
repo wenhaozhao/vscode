@@ -33,6 +33,7 @@ import { URI } from 'vs/base/common/uri';
 import { IUpdateService, StateType } from 'vs/platform/update/common/update';
 import { Gesture, EventType, GestureEvent } from 'vs/base/browser/touch';
 import { attachMenuStyler } from 'vs/platform/theme/common/styler';
+import { ILabelService } from 'vs/platform/label/common/label';
 
 const $ = DOM.$;
 
@@ -124,7 +125,8 @@ export class MenubarControl extends Disposable {
 		@IKeybindingService private keybindingService: IKeybindingService,
 		@IConfigurationService private configurationService: IConfigurationService,
 		@IUpdateService private updateService: IUpdateService,
-		@IMenubarService private menubarService: IMenubarService
+		@IMenubarService private menubarService: IMenubarService,
+		@ILabelService private labelService: ILabelService
 	) {
 
 		super();
