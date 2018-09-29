@@ -25,7 +25,7 @@ jobs:
 - job: Linux
   condition: eq(variables['VSCODE_BUILD_LINUX'], 'true')
   pool:
-    vmImage: 'Ubuntu 16.04'
+    vmImage: 'Ubuntu-16.04'
   variables:
     VSCODE_ARCH: x64
   container: vscode-x64
