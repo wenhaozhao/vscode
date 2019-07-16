@@ -25,7 +25,7 @@ export class OpenDocumentLinkCommand implements Command {
 		path: string,
 		fragment: string
 	): vscode.Uri {
-		return vscode.Uri.parse(`command:${OpenDocumentLinkCommand.id}?${encodeURIComponent(JSON.stringify({ path, fragment }))}`);
+		return vscode.Uri.parse(`command:${OpenDocumentLinkCommand.id}?${encodeURIComponent(JSON.stringify({ path: encodeURIComponent(path), fragment }))}`);
 	}
 
 	public constructor(
@@ -35,25 +35,26 @@ export class OpenDocumentLinkCommand implements Command {
 	public execute(args: OpenDocumentLinkArgs) {
 		const p = decodeURIComponent(args.path);
 		return this.tryOpen(p, args).catch(() => {
-			if (extname(p) === '') {
+			if (p && extname(p) === '') {
 				return this.tryOpen(p + '.md', args);
 			}
 			const resource = vscode.Uri.file(p);
-			return Promise.resolve(void 0)
+			return Promise.resolve(undefined)
 				.then(() => vscode.commands.executeCommand('vscode.open', resource))
-				.then(() => void 0);
+				.then(() => undefined);
 		});
 	}
 
 	private async tryOpen(path: string, args: OpenDocumentLinkArgs) {
 		const resource = vscode.Uri.file(path);
-		if (vscode.window.activeTextEditor && isMarkdownFile(vscode.window.activeTextEditor.document) && vscode.window.activeTextEditor.document.uri.fsPath === resource.fsPath) {
-			return this.tryRevealLine(vscode.window.activeTextEditor, args.fragment);
-		} else {
-			return vscode.workspace.openTextDocument(resource)
-				.then(vscode.window.showTextDocument)
-				.then(editor => this.tryRevealLine(editor, args.fragment));
+		if (vscode.window.activeTextEditor && isMarkdownFile(vscode.window.activeTextEditor.document)) {
+			if (!path || vscode.window.activeTextEditor.document.uri.fsPath === resource.fsPath) {
+				return this.tryRevealLine(vscode.window.activeTextEditor, args.fragment);
+			}
 		}
+		return vscode.workspace.openTextDocument(resource)
+			.then(vscode.window.showTextDocument)
+			.then(editor => this.tryRevealLine(editor, args.fragment));
 	}
 
 	private async tryRevealLine(editor: vscode.TextEditor, fragment?: string) {

@@ -20,6 +20,38 @@ process.on('SIGPIPE', () => {
 
 //#endregion
 
+//#region Add support for redirecting the loading of node modules
+exports.injectNodeModuleLookupPath = function (injectPath) {
+	if (!injectPath) {
+		throw new Error('Missing injectPath');
+	}
+
+	// @ts-ignore
+	const Module = require('module');
+	const path = require('path');
+
+	const nodeModulesPath = path.join(__dirname, '../node_modules');
+
+	// @ts-ignore
+	const originalResolveLookupPaths = Module._resolveLookupPaths;
+
+	// @ts-ignore
+	Module._resolveLookupPaths = function (moduleName, parent, newReturn) {
+		const result = originalResolveLookupPaths(moduleName, parent, newReturn);
+
+		const paths = newReturn ? result : result[1];
+		for (let i = 0, len = paths.length; i < len; i++) {
+			if (paths[i] === nodeModulesPath) {
+				paths.splice(i, 0, injectPath);
+				break;
+			}
+		}
+
+		return result;
+	};
+};
+//#endregion
+
 //#region Add support for using node_modules.asar
 /**
  * @param {string=} nodeModulesPath
@@ -37,7 +69,9 @@ exports.enableASARSupport = function (nodeModulesPath) {
 
 	const NODE_MODULES_ASAR_PATH = NODE_MODULES_PATH + '.asar';
 
+	// @ts-ignore
 	const originalResolveLookupPaths = Module._resolveLookupPaths;
+	// @ts-ignore
 	Module._resolveLookupPaths = function (request, parent, newReturn) {
 		const result = originalResolveLookupPaths(request, parent, newReturn);
 
@@ -67,7 +101,15 @@ exports.uriFromPath = function (_path) {
 		pathName = '/' + pathName;
 	}
 
-	return encodeURI('file://' + pathName).replace(/#/g, '%23');
+	/** @type {string} */
+	let uri;
+	if (process.platform === 'win32' && pathName.startsWith('//')) { // specially handle Windows UNC paths
+		uri = encodeURI('file:' + pathName);
+	} else {
+		uri = encodeURI('file://' + pathName);
+	}
+
+	return uri.replace(/#/g, '%23');
 };
 //#endregion
 
@@ -106,6 +148,36 @@ exports.writeFile = function (file, content) {
 			}
 			resolve();
 		});
+	});
+};
+
+/**
+ * @param {string} dir
+ * @returns {Promise<string>}
+ */
+function mkdir(dir) {
+	const fs = require('fs');
+
+	return new Promise((c, e) => fs.mkdir(dir, err => (err && err.code !== 'EEXIST') ? e(err) : c(dir)));
+}
+
+/**
+ * @param {string} dir
+ * @returns {Promise<string>}
+ */
+exports.mkdirp = function mkdirp(dir) {
+	const path = require('path');
+
+	return mkdir(dir).then(null, err => {
+		if (err && err.code === 'ENOENT') {
+			const parent = path.dirname(dir);
+
+			if (parent !== dir) { // if not arrived at root
+				return mkdirp(parent).then(() => mkdir(dir));
+			}
+		}
+
+		throw err;
 	});
 };
 //#endregion
@@ -225,6 +297,7 @@ exports.configurePortable = function () {
  * This should be called before importing the applicationinsights module
  */
 exports.avoidMonkeyPatchFromAppInsights = function () {
+	// @ts-ignore
 	process.env['APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL'] = true; // Skip monkey patching of 3rd party modules by appinsights
 	global['diagnosticsSource'] = {}; // Prevents diagnostic channel (which patches "require") from initializing entirely
 };

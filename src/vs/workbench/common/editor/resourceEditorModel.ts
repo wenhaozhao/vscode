@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { BaseTextEditorModel } from 'vs/workbench/common/editor/textEditorModel';
 import { URI } from 'vs/base/common/uri';
@@ -20,12 +19,19 @@ export class ResourceEditorModel extends BaseTextEditorModel {
 		@IModelService modelService: IModelService
 	) {
 		super(modelService, modeService, resource);
-
-		// TODO@Joao: force this class to dispose the underlying model
-		this.createdEditorModel = true;
 	}
 
 	isReadonly(): boolean {
 		return true;
+	}
+
+	dispose(): void {
+
+		// TODO@Joao: force this class to dispose the underlying model
+		if (this.textEditorModelHandle) {
+			this.modelService.destroyModel(this.textEditorModelHandle);
+		}
+
+		super.dispose();
 	}
 }

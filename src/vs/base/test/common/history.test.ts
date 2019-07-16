@@ -2,8 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
-
 import * as assert from 'assert';
 import { HistoryNavigator } from 'vs/base/common/history';
 
@@ -115,12 +113,12 @@ suite('History Navigator', () => {
 		assert.equal(testObject.current(), undefined);
 	});
 
-	function toArray(historyNavigator: HistoryNavigator<string>): string[] {
-		let result = [];
+	function toArray(historyNavigator: HistoryNavigator<string>): Array<string | null> {
+		let result: Array<string | null> = [];
 		historyNavigator.first();
 		if (historyNavigator.current()) {
 			do {
-				result.push(historyNavigator.current());
+				result.push(historyNavigator.current()!);
 			} while (historyNavigator.next());
 		}
 		return result;

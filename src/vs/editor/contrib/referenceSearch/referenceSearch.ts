@@ -2,11 +2,9 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as nls from 'vs/nls';
 import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
-import { TPromise } from 'vs/base/common/winjs.base';
 import { IContextKeyService, ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
 import { KeybindingsRegistry, KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegistry';
 import { Position, IPosition } from 'vs/editor/common/core/position';
@@ -32,7 +30,7 @@ import { CancellationToken } from 'vs/base/common/cancellation';
 
 export const defaultReferenceSearchOptions: RequestOptions = {
 	getMetaTitle(model) {
-		return model.references.length > 1 && nls.localize('meta.titleReference', " – {0} references", model.references.length);
+		return model.references.length > 1 ? nls.localize('meta.titleReference', " – {0} references", model.references.length) : '';
 	}
 };
 
@@ -62,8 +60,8 @@ export class ReferenceAction extends EditorAction {
 	constructor() {
 		super({
 			id: 'editor.action.referenceSearch.trigger',
-			label: nls.localize('references.action.label', "Find All References"),
-			alias: 'Find All References',
+			label: nls.localize('references.action.label', "Peek References"),
+			alias: 'Peek References',
 			precondition: ContextKeyExpr.and(
 				EditorContextKeys.hasReferenceProvider,
 				PeekContext.notInPeekEditor,
@@ -80,15 +78,17 @@ export class ReferenceAction extends EditorAction {
 		});
 	}
 
-	public run(accessor: ServicesAccessor, editor: ICodeEditor): void {
+	public run(_accessor: ServicesAccessor, editor: ICodeEditor): void {
 		let controller = ReferencesController.get(editor);
 		if (!controller) {
 			return;
 		}
-		let range = editor.getSelection();
-		let model = editor.getModel();
-		let references = createCancelablePromise(token => provideReferences(model, range.getStartPosition(), token).then(references => new ReferencesModel(references)));
-		controller.toggleWidget(range, references, defaultReferenceSearchOptions);
+		if (editor.hasModel()) {
+			const range = editor.getSelection();
+			const model = editor.getModel();
+			const references = createCancelablePromise(token => provideReferences(model, range.getStartPosition(), token).then(references => new ReferencesModel(references)));
+			controller.toggleWidget(range, references, defaultReferenceSearchOptions);
+		}
 	}
 }
 
@@ -106,7 +106,7 @@ let findReferencesCommand: ICommandHandler = (accessor: ServicesAccessor, resour
 
 	const codeEditorService = accessor.get(ICodeEditorService);
 	return codeEditorService.openCodeEditor({ resource }, codeEditorService.getFocusedCodeEditor()).then(control => {
-		if (!isCodeEditor(control)) {
+		if (!isCodeEditor(control) || !control.hasModel()) {
 			return undefined;
 		}
 
@@ -117,7 +117,7 @@ let findReferencesCommand: ICommandHandler = (accessor: ServicesAccessor, resour
 
 		let references = createCancelablePromise(token => provideReferences(control.getModel(), Position.lift(position), token).then(references => new ReferencesModel(references)));
 		let range = new Range(position.lineNumber, position.column, position.lineNumber, position.column);
-		return TPromise.as(controller.toggleWidget(range, references, defaultReferenceSearchOptions));
+		return Promise.resolve(controller.toggleWidget(range, references, defaultReferenceSearchOptions));
 	});
 };
 
@@ -141,10 +141,11 @@ let showReferencesCommand: ICommandHandler = (accessor: ServicesAccessor, resour
 			return undefined;
 		}
 
-		return TPromise.as(controller.toggleWidget(
+		return controller.toggleWidget(
 			new Range(position.lineNumber, position.column, position.lineNumber, position.column),
 			createCancelablePromise(_ => Promise.resolve(new ReferencesModel(references))),
-			defaultReferenceSearchOptions)).then(() => true);
+			defaultReferenceSearchOptions
+		);
 	});
 };
 

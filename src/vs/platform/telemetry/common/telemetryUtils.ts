@@ -2,26 +2,26 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
-import { TPromise } from 'vs/base/common/winjs.base';
 import { IDisposable } from 'vs/base/common/lifecycle';
-import { guessMimeTypes } from 'vs/base/common/mime';
-import * as paths from 'vs/base/common/paths';
-import { URI } from 'vs/base/common/uri';
 import { IConfigurationService, ConfigurationTarget, ConfigurationTargetToString } from 'vs/platform/configuration/common/configuration';
 import { IKeybindingService, KeybindingSource } from 'vs/platform/keybinding/common/keybinding';
 import { ITelemetryService, ITelemetryInfo, ITelemetryData } from 'vs/platform/telemetry/common/telemetry';
 import { ILogService } from 'vs/platform/log/common/log';
+import { ClassifiedEvent, StrictPropertyCheck, GDPRClassification } from 'vs/platform/telemetry/common/gdprTypings';
 
 export const NullTelemetryService = new class implements ITelemetryService {
 	_serviceBrand: undefined;
 	publicLog(eventName: string, data?: ITelemetryData) {
-		return TPromise.wrap<void>(null);
+		return Promise.resolve(undefined);
 	}
+	publicLog2<E extends ClassifiedEvent<T> = never, T extends GDPRClassification<T> = never>(eventName: string, data?: StrictPropertyCheck<T, E>) {
+		return this.publicLog(eventName, data as ITelemetryData);
+	}
+	setEnabled() { }
 	isOptedIn: true;
-	getTelemetryInfo(): TPromise<ITelemetryInfo> {
-		return TPromise.wrap({
+	getTelemetryInfo(): Promise<ITelemetryInfo> {
+		return Promise.resolve({
 			instanceId: 'someValue.instanceId',
 			sessionId: 'someValue.sessionId',
 			machineId: 'someValue.machineId'
@@ -31,17 +31,17 @@ export const NullTelemetryService = new class implements ITelemetryService {
 
 export interface ITelemetryAppender {
 	log(eventName: string, data: any): void;
-	dispose(): TPromise<any>;
+	dispose(): Promise<any> | undefined;
 }
 
 export function combinedAppender(...appenders: ITelemetryAppender[]): ITelemetryAppender {
 	return {
 		log: (e, d) => appenders.forEach(a => a.log(e, d)),
-		dispose: () => TPromise.join(appenders.map(a => a.dispose()))
+		dispose: () => Promise.all(appenders.map(a => a.dispose()))
 	};
 }
 
-export const NullAppender: ITelemetryAppender = { log: () => null, dispose: () => TPromise.as(null) };
+export const NullAppender: ITelemetryAppender = { log: () => null, dispose: () => Promise.resolve(null) };
 
 
 export class LogAppender implements ITelemetryAppender {
@@ -49,12 +49,12 @@ export class LogAppender implements ITelemetryAppender {
 	private commonPropertiesRegex = /^sessionID$|^version$|^timestamp$|^commitHash$|^common\./;
 	constructor(@ILogService private readonly _logService: ILogService) { }
 
-	dispose(): TPromise<any> {
-		return TPromise.as(undefined);
+	dispose(): Promise<any> {
+		return Promise.resolve(undefined);
 	}
 
 	log(eventName: string, data: any): void {
-		const strippedData = {};
+		const strippedData: { [key: string]: any } = {};
 		Object.keys(data).forEach(key => {
 			if (!this.commonPropertiesRegex.test(key)) {
 				strippedData[key] = data[key];
@@ -67,19 +67,16 @@ export class LogAppender implements ITelemetryAppender {
 /* __GDPR__FRAGMENT__
 	"URIDescriptor" : {
 		"mimeType" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
+		"scheme": { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
 		"ext": { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
 		"path": { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
 	}
 */
 export interface URIDescriptor {
 	mimeType?: string;
+	scheme?: string;
 	ext?: string;
 	path?: string;
-}
-
-export function telemetryURIDescriptor(uri: URI, hashPath: (path: string) => string): URIDescriptor {
-	const fsPath = uri && uri.fsPath;
-	return fsPath ? { mimeType: guessMimeTypes(fsPath).join(', '), ext: paths.extname(fsPath), path: hashPath(fsPath) } : {};
 }
 
 /**
@@ -95,6 +92,7 @@ const configurationValueWhitelist = [
 	'editor.rulers',
 	'editor.wordSeparators',
 	'editor.tabSize',
+	'editor.indentSize',
 	'editor.insertSpaces',
 	'editor.detectIndentation',
 	'editor.roundedSelection',
@@ -135,6 +133,7 @@ const configurationValueWhitelist = [
 	'editor.overviewRulerLanes',
 	'editor.overviewRulerBorder',
 	'editor.cursorBlinking',
+	'editor.cursorSmoothCaretAnimation',
 	'editor.cursorStyle',
 	'editor.mouseWheelZoom',
 	'editor.fontLigatures',
@@ -158,6 +157,7 @@ const configurationValueWhitelist = [
 	'breadcrumbs.enabled',
 	'breadcrumbs.filePath',
 	'breadcrumbs.symbolPath',
+	'breadcrumbs.symbolSortOrder',
 	'breadcrumbs.useQuickPick',
 	'explorer.openEditors.visible',
 	'extensions.autoUpdate',
@@ -179,11 +179,12 @@ const configurationValueWhitelist = [
 	'terminal.integrated.fontFamily',
 	'window.openFilesInNewWindow',
 	'window.restoreWindows',
+	'window.nativeFullScreen',
 	'window.zoomLevel',
 	'workbench.editor.enablePreview',
 	'workbench.editor.enablePreviewFromQuickOpen',
 	'workbench.editor.showTabs',
-	'workbench.editor.swipeToNavigate',
+	'workbench.editor.highlightModifiedTabs',
 	'workbench.sideBar.location',
 	'workbench.startupEditor',
 	'workbench.statusBar.visible',
@@ -193,23 +194,27 @@ const configurationValueWhitelist = [
 export function configurationTelemetry(telemetryService: ITelemetryService, configurationService: IConfigurationService): IDisposable {
 	return configurationService.onDidChangeConfiguration(event => {
 		if (event.source !== ConfigurationTarget.DEFAULT) {
-			/* __GDPR__
-				"updateConfiguration" : {
-					"configurationSource" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
-					"configurationKeys": { "classification": "SystemMetaData", "purpose": "FeatureInsight" }
-				}
-			*/
-			telemetryService.publicLog('updateConfiguration', {
+			type UpdateConfigurationClassification = {
+				configurationSource: { classification: 'SystemMetaData', purpose: 'FeatureInsight' };
+				configurationKeys: { classification: 'SystemMetaData', purpose: 'FeatureInsight' };
+			};
+			type UpdateConfigurationEvent = {
+				configurationSource: string;
+				configurationKeys: string[];
+			};
+			telemetryService.publicLog2<UpdateConfigurationEvent, UpdateConfigurationClassification>('updateConfiguration', {
 				configurationSource: ConfigurationTargetToString(event.source),
 				configurationKeys: flattenKeys(event.sourceConfig)
 			});
-			/* __GDPR__
-				"updateConfigurationValues" : {
-					"configurationSource" : { "classification": "SystemMetaData", "purpose": "FeatureInsight" },
-					"configurationValues": { "classification": "CustomerContent", "purpose": "FeatureInsight" }
-				}
-			*/
-			telemetryService.publicLog('updateConfigurationValues', {
+			type UpdateConfigurationValuesClassification = {
+				configurationSource: { classification: 'SystemMetaData', purpose: 'FeatureInsight' };
+				configurationValues: { classification: 'CustomerContent', purpose: 'FeatureInsight' };
+			};
+			type UpdateConfigurationValuesEvent = {
+				configurationSource: string;
+				configurationValues: { [key: string]: any }[];
+			};
+			telemetryService.publicLog2<UpdateConfigurationValuesEvent, UpdateConfigurationValuesClassification>('updateConfigurationValues', {
 				configurationSource: ConfigurationTargetToString(event.source),
 				configurationValues: flattenValues(event.sourceConfig, configurationValueWhitelist)
 			});
@@ -220,12 +225,13 @@ export function configurationTelemetry(telemetryService: ITelemetryService, conf
 export function keybindingsTelemetry(telemetryService: ITelemetryService, keybindingService: IKeybindingService): IDisposable {
 	return keybindingService.onDidUpdateKeybindings(event => {
 		if (event.source === KeybindingSource.User && event.keybindings) {
-			/* __GDPR__
-				"updateKeybindings" : {
-					"bindings": { "classification": "CustomerContent", "purpose": "FeatureInsight" }
-				}
-			*/
-			telemetryService.publicLog('updateKeybindings', {
+			type UpdateKeybindingsClassification = {
+				bindings: { classification: 'CustomerContent', purpose: 'FeatureInsight' };
+			};
+			type UpdateKeybindingsEvents = {
+				bindings: { key: string, command: string, when: string | undefined, args: boolean | undefined }[];
+			};
+			telemetryService.publicLog2<UpdateKeybindingsEvents, UpdateKeybindingsClassification>('updateKeybindings', {
 				bindings: event.keybindings.map(binding => ({
 					key: binding.key,
 					command: binding.command,
@@ -237,7 +243,7 @@ export function keybindingsTelemetry(telemetryService: ITelemetryService, keybin
 	});
 }
 
-function flattenKeys(value: Object): string[] {
+function flattenKeys(value: Object | undefined): string[] {
 	if (!value) {
 		return [];
 	}
@@ -246,7 +252,7 @@ function flattenKeys(value: Object): string[] {
 	return result;
 }
 
-function flatKeys(result: string[], prefix: string, value: Object): void {
+function flatKeys(result: string[], prefix: string, value: { [key: string]: any } | undefined): void {
 	if (value && typeof value === 'object' && !Array.isArray(value)) {
 		Object.keys(value)
 			.forEach(key => flatKeys(result, prefix ? `${prefix}.${key}` : key, value[key]));
@@ -255,7 +261,7 @@ function flatKeys(result: string[], prefix: string, value: Object): void {
 	}
 }
 
-function flattenValues(value: Object, keys: string[]): { [key: string]: any }[] {
+function flattenValues(value: { [key: string]: any } | undefined, keys: string[]): { [key: string]: any }[] {
 	if (!value) {
 		return [];
 	}
@@ -267,5 +273,5 @@ function flattenValues(value: Object, keys: string[]): { [key: string]: any }[] 
 			array.push({ [key]: v });
 		}
 		return array;
-	}, []);
+	}, <{ [key: string]: any }[]>[]);
 }

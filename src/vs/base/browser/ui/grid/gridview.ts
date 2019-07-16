@@ -3,19 +3,22 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import 'vs/css!./gridview';
-import { Event, anyEvent, Emitter, mapEvent, Relay } from 'vs/base/common/event';
+import { Event, Emitter, Relay } from 'vs/base/common/event';
 import { Orientation, Sash } from 'vs/base/browser/ui/sash/sash';
-import { SplitView, IView as ISplitView, Sizing, ISplitViewStyles } from 'vs/base/browser/ui/splitview/splitview';
+import { SplitView, IView as ISplitView, Sizing, LayoutPriority, ISplitViewStyles } from 'vs/base/browser/ui/splitview/splitview';
 import { Disposable, IDisposable, toDisposable } from 'vs/base/common/lifecycle';
 import { $ } from 'vs/base/browser/dom';
 import { tail2 as tail } from 'vs/base/common/arrays';
 import { Color } from 'vs/base/common/color';
 
-export { Sizing } from 'vs/base/browser/ui/splitview/splitview';
+export { Sizing, LayoutPriority } from 'vs/base/browser/ui/splitview/splitview';
 export { Orientation } from 'vs/base/browser/ui/sash/sash';
+
+export interface IViewSize {
+	readonly width: number;
+	readonly height: number;
+}
 
 export interface IView {
 	readonly element: HTMLElement;
@@ -23,8 +26,11 @@ export interface IView {
 	readonly maximumWidth: number;
 	readonly minimumHeight: number;
 	readonly maximumHeight: number;
-	readonly onDidChange: Event<{ width: number; height: number; }>;
-	layout(width: number, height: number): void;
+	readonly onDidChange: Event<IViewSize | undefined>;
+	readonly priority?: LayoutPriority;
+	readonly snap?: boolean;
+	layout(width: number, height: number, orientation: Orientation): void;
+	setVisible?(visible: boolean): void;
 }
 
 export function orthogonal(orientation: Orientation): Orientation {
@@ -62,6 +68,7 @@ const defaultStyles: IGridViewStyles = {
 
 export interface IGridViewOptions {
 	styles?: IGridViewStyles;
+	proportionalLayout?: boolean; // default true
 }
 
 class BranchNode implements ISplitView, IDisposable {
@@ -137,6 +144,7 @@ class BranchNode implements ISplitView, IDisposable {
 	constructor(
 		readonly orientation: Orientation,
 		styles: IGridViewStyles,
+		readonly proportionalLayout: boolean,
 		size: number = 0,
 		orthogonalSize: number = 0
 	) {
@@ -145,10 +153,10 @@ class BranchNode implements ISplitView, IDisposable {
 		this._orthogonalSize = orthogonalSize;
 
 		this.element = $('.monaco-grid-branch-node');
-		this.splitview = new SplitView(this.element, { orientation, styles });
+		this.splitview = new SplitView(this.element, { orientation, styles, proportionalLayout });
 		this.splitview.layout(size);
 
-		const onDidSashReset = mapEvent(this.splitview.onDidSashReset, i => [i]);
+		const onDidSashReset = Event.map(this.splitview.onDidSashReset, i => [i]);
 		this.splitviewSashResetDisposable = onDidSashReset(this._onDidSashReset.fire, this._onDidSashReset);
 	}
 
@@ -168,6 +176,12 @@ class BranchNode implements ISplitView, IDisposable {
 
 		for (const child of this.children) {
 			child.orthogonalLayout(size);
+		}
+	}
+
+	setVisible(visible: boolean): void {
+		for (const child of this.children) {
+			child.setVisible(visible);
 		}
 	}
 
@@ -297,16 +311,32 @@ class BranchNode implements ISplitView, IDisposable {
 		return this.splitview.getViewSize(index);
 	}
 
+	isChildVisible(index: number): boolean {
+		if (index < 0 || index >= this.children.length) {
+			throw new Error('Invalid index');
+		}
+
+		return this.splitview.isViewVisible(index);
+	}
+
+	setChildVisible(index: number, visible: boolean): void {
+		if (index < 0 || index >= this.children.length) {
+			throw new Error('Invalid index');
+		}
+
+		this.splitview.setViewVisible(index, visible);
+	}
+
 	private onDidChildrenChange(): void {
-		const onDidChildrenChange = anyEvent(...this.children.map(c => c.onDidChange));
+		const onDidChildrenChange = Event.map(Event.any(...this.children.map(c => c.onDidChange)), () => undefined);
 		this.childrenChangeDisposable.dispose();
 		this.childrenChangeDisposable = onDidChildrenChange(this._onDidChange.fire, this._onDidChange);
 
-		const onDidChildrenSashReset = anyEvent(...this.children.map((c, i) => mapEvent(c.onDidSashReset, location => [i, ...location])));
+		const onDidChildrenSashReset = Event.any(...this.children.map((c, i) => Event.map(c.onDidSashReset, location => [i, ...location])));
 		this.childrenSashResetDisposable.dispose();
 		this.childrenSashResetDisposable = onDidChildrenSashReset(this._onDidSashReset.fire, this._onDidSashReset);
 
-		this._onDidChange.fire();
+		this._onDidChange.fire(undefined);
 	}
 
 	trySet2x2(other: BranchNode): IDisposable {
@@ -346,8 +376,8 @@ class BranchNode implements ISplitView, IDisposable {
 		mySash.linkedSash = otherSash;
 		otherSash.linkedSash = mySash;
 
-		this._onDidChange.fire();
-		other._onDidChange.fire();
+		this._onDidChange.fire(undefined);
+		other._onDidChange.fire(undefined);
 
 		return toDisposable(() => {
 			mySash.linkedSash = otherSash.linkedSash = undefined;
@@ -389,7 +419,7 @@ class LeafNode implements ISplitView, IDisposable {
 	set linkedWidthNode(node: LeafNode | undefined) {
 		this._onDidLinkedWidthNodeChange.input = node ? node._onDidViewChange : Event.None;
 		this._linkedWidthNode = node;
-		this._onDidSetLinkedNode.fire();
+		this._onDidSetLinkedNode.fire(undefined);
 	}
 
 	private _onDidLinkedHeightNodeChange = new Relay<number | undefined>();
@@ -398,7 +428,7 @@ class LeafNode implements ISplitView, IDisposable {
 	set linkedHeightNode(node: LeafNode | undefined) {
 		this._onDidLinkedHeightNodeChange.input = node ? node._onDidViewChange : Event.None;
 		this._linkedHeightNode = node;
-		this._onDidSetLinkedNode.fire();
+		this._onDidSetLinkedNode.fire(undefined);
 	}
 
 	private _onDidSetLinkedNode = new Emitter<number | undefined>();
@@ -412,8 +442,8 @@ class LeafNode implements ISplitView, IDisposable {
 	) {
 		this._orthogonalSize = orthogonalSize;
 
-		this._onDidViewChange = mapEvent(this.view.onDidChange, this.orientation === Orientation.HORIZONTAL ? e => e && e.width : e => e && e.height);
-		this.onDidChange = anyEvent(this._onDidViewChange, this._onDidSetLinkedNode.event, this._onDidLinkedWidthNodeChange.event, this._onDidLinkedHeightNodeChange.event);
+		this._onDidViewChange = Event.map(this.view.onDidChange, e => e && (this.orientation === Orientation.VERTICAL ? e.width : e.height));
+		this.onDidChange = Event.any(this._onDidViewChange, this._onDidSetLinkedNode.event, this._onDidLinkedWidthNodeChange.event, this._onDidLinkedHeightNodeChange.event);
 	}
 
 	get width(): number {
@@ -452,6 +482,14 @@ class LeafNode implements ISplitView, IDisposable {
 		return this.orientation === Orientation.HORIZONTAL ? this.maximumHeight : this.maximumWidth;
 	}
 
+	get priority(): LayoutPriority | undefined {
+		return this.view.priority;
+	}
+
+	get snap(): boolean | undefined {
+		return this.view.snap;
+	}
+
 	get minimumOrthogonalSize(): number {
 		return this.orientation === Orientation.HORIZONTAL ? this.minimumWidth : this.minimumHeight;
 	}
@@ -470,12 +508,18 @@ class LeafNode implements ISplitView, IDisposable {
 
 	layout(size: number): void {
 		this._size = size;
-		return this.view.layout(this.width, this.height);
+		return this.view.layout(this.width, this.height, orthogonal(this.orientation));
+	}
+
+	setVisible(visible: boolean): void {
+		if (this.view.setVisible) {
+			this.view.setVisible(visible);
+		}
 	}
 
 	orthogonalLayout(size: number): void {
 		this._orthogonalSize = size;
-		return this.view.layout(this.width, this.height);
+		return this.view.layout(this.width, this.height, orthogonal(this.orientation));
 	}
 
 	dispose(): void { }
@@ -485,7 +529,7 @@ type Node = BranchNode | LeafNode;
 
 function flipNode<T extends Node>(node: T, size: number, orthogonalSize: number): T {
 	if (node instanceof BranchNode) {
-		const result = new BranchNode(orthogonal(node.orientation), node.styles, size, orthogonalSize);
+		const result = new BranchNode(orthogonal(node.orientation), node.styles, node.proportionalLayout, size, orthogonalSize);
 
 		let totalSize = 0;
 
@@ -514,6 +558,7 @@ export class GridView implements IDisposable {
 
 	readonly element: HTMLElement;
 	private styles: IGridViewStyles;
+	private proportionalLayout: boolean;
 
 	private _root: BranchNode;
 	private onDidSashResetRelay = new Relay<number[]>();
@@ -536,7 +581,7 @@ export class GridView implements IDisposable {
 		this._root = root;
 		this.element.appendChild(root.element);
 		this.onDidSashResetRelay.input = root.onDidSashReset;
-		this._onDidChange.input = mapEvent(root.onDidChange, () => undefined); // TODO
+		this._onDidChange.input = Event.map(root.onDidChange, () => undefined); // TODO
 	}
 
 	get orientation(): Orientation {
@@ -562,13 +607,14 @@ export class GridView implements IDisposable {
 	get maximumWidth(): number { return this.root.maximumHeight; }
 	get maximumHeight(): number { return this.root.maximumHeight; }
 
-	private _onDidChange = new Relay<{ width: number; height: number; }>();
+	private _onDidChange = new Relay<IViewSize | undefined>();
 	readonly onDidChange = this._onDidChange.event;
 
 	constructor(options: IGridViewOptions = {}) {
 		this.element = $('.monaco-grid-view');
 		this.styles = options.styles || defaultStyles;
-		this.root = new BranchNode(Orientation.VERTICAL, this.styles);
+		this.proportionalLayout = typeof options.proportionalLayout !== 'undefined' ? !!options.proportionalLayout : true;
+		this.root = new BranchNode(Orientation.VERTICAL, this.styles, this.proportionalLayout);
 	}
 
 	style(styles: IGridViewStyles): void {
@@ -598,7 +644,7 @@ export class GridView implements IDisposable {
 			const [, parentIndex] = tail(rest);
 			grandParent.removeChild(parentIndex);
 
-			const newParent = new BranchNode(parent.orientation, this.styles, parent.size, parent.orthogonalSize);
+			const newParent = new BranchNode(parent.orientation, this.styles, this.proportionalLayout, parent.size, parent.orthogonalSize);
 			grandParent.addChild(newParent, parent.size, parentIndex);
 			newParent.orthogonalLayout(parent.orthogonalSize);
 
@@ -735,18 +781,33 @@ export class GridView implements IDisposable {
 		}
 	}
 
-	resizeView(location: number[], size: number): void {
+	resizeView(location: number[], { width, height }: Partial<IViewSize>): void {
 		const [rest, index] = tail(location);
-		const [, parent] = this.getNode(rest);
+		const [pathToParent, parent] = this.getNode(rest);
 
 		if (!(parent instanceof BranchNode)) {
 			throw new Error('Invalid location');
 		}
 
-		parent.resizeChild(index, size);
+		if (!width && !height) {
+			return;
+		}
+
+		const [parentSize, grandParentSize] = parent.orientation === Orientation.HORIZONTAL ? [width, height] : [height, width];
+
+		if (typeof grandParentSize === 'number' && pathToParent.length > 0) {
+			const [, grandParent] = tail(pathToParent);
+			const [, parentIndex] = tail(rest);
+
+			grandParent.resizeChild(parentIndex, grandParentSize);
+		}
+
+		if (typeof parentSize === 'number') {
+			parent.resizeChild(index, parentSize);
+		}
 	}
 
-	getViewSize(location: number[]): { width: number; height: number; } {
+	getViewSize(location: number[]): IViewSize {
 		const [, node] = this.getNode(location);
 		return { width: node.width, height: node.height };
 	}
@@ -778,6 +839,28 @@ export class GridView implements IDisposable {
 		node.distributeViewSizes();
 	}
 
+	isViewVisible(location: number[]): boolean {
+		const [rest, index] = tail(location);
+		const [, parent] = this.getNode(rest);
+
+		if (!(parent instanceof BranchNode)) {
+			throw new Error('Invalid from location');
+		}
+
+		return parent.isChildVisible(index);
+	}
+
+	setViewVisible(location: number[], visible: boolean): void {
+		const [rest, index] = tail(location);
+		const [, parent] = this.getNode(rest);
+
+		if (!(parent instanceof BranchNode)) {
+			throw new Error('Invalid from location');
+		}
+
+		parent.setChildVisible(index, visible);
+	}
+
 	getViews(): GridBranchNode {
 		return this._getViews(this.root, this.orientation, { top: 0, left: 0, width: this.width, height: this.height }) as GridBranchNode;
 	}
@@ -790,8 +873,7 @@ export class GridView implements IDisposable {
 		const children: GridNode[] = [];
 		let offset = 0;
 
-		for (let i = 0; i < node.children.length; i++) {
-			const child = node.children[i];
+		for (const child of node.children) {
 			const childOrientation = orthogonal(orientation);
 			const childBox: Box = orientation === Orientation.HORIZONTAL
 				? { top: box.top, left: box.left + offset, width: child.width, height: box.height }

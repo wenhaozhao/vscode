@@ -3,11 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import 'vs/css!./panelview';
-import { IDisposable, dispose, combinedDisposable, Disposable } from 'vs/base/common/lifecycle';
-import { Event, Emitter, chain } from 'vs/base/common/event';
+import { IDisposable, Disposable, DisposableStore } from 'vs/base/common/lifecycle';
+import { Event, Emitter } from 'vs/base/common/event';
 import { domEvent } from 'vs/base/browser/event';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode } from 'vs/base/common/keyCodes';
@@ -39,14 +37,15 @@ export interface IPanelStyles {
  * Subclasses wouldn't be able to set own properties
  * before the `render()` call, thus forbiding their use.
  */
-export abstract class Panel implements IView {
+export abstract class Panel extends Disposable implements IView {
 
 	private static readonly HEADER_SIZE = 22;
 
 	readonly element: HTMLElement;
+	private header: HTMLElement;
+	private body: HTMLElement;
 
 	protected _expanded: boolean;
-	protected disposables: IDisposable[] = [];
 
 	private expandedSize: number | undefined = undefined;
 	private _headerVisible = true;
@@ -54,10 +53,9 @@ export abstract class Panel implements IView {
 	private _maximumBodySize: number;
 	private ariaHeaderLabel: string;
 	private styles: IPanelStyles = {};
+	private animationTimer: number | undefined = undefined;
 
-	private header: HTMLElement;
-
-	private _onDidChange = new Emitter<number | undefined>();
+	private readonly _onDidChange = this._register(new Emitter<number | undefined>());
 	readonly onDidChange: Event<number | undefined> = this._onDidChange.event;
 
 	get draggableElement(): HTMLElement {
@@ -79,7 +77,7 @@ export abstract class Panel implements IView {
 
 	set minimumBodySize(size: number) {
 		this._minimumBodySize = size;
-		this._onDidChange.fire();
+		this._onDidChange.fire(undefined);
 	}
 
 	get maximumBodySize(): number {
@@ -88,7 +86,7 @@ export abstract class Panel implements IView {
 
 	set maximumBodySize(size: number) {
 		this._maximumBodySize = size;
-		this._onDidChange.fire();
+		this._onDidChange.fire(undefined);
 	}
 
 	private get headerSize(): number {
@@ -111,7 +109,10 @@ export abstract class Panel implements IView {
 		return headerSize + maximumBodySize;
 	}
 
+	width: number;
+
 	constructor(options: IPanelOptions = {}) {
+		super();
 		this._expanded = typeof options.expanded === 'undefined' ? true : !!options.expanded;
 		this.ariaHeaderLabel = options.ariaHeaderLabel || '';
 		this._minimumBodySize = typeof options.minimumBodySize === 'number' ? options.minimumBodySize : 120;
@@ -124,14 +125,27 @@ export abstract class Panel implements IView {
 		return this._expanded;
 	}
 
-	setExpanded(expanded: boolean): void {
+	setExpanded(expanded: boolean): boolean {
 		if (this._expanded === !!expanded) {
-			return;
+			return false;
 		}
 
 		this._expanded = !!expanded;
 		this.updateHeader();
+
+		if (expanded) {
+			if (typeof this.animationTimer === 'number') {
+				clearTimeout(this.animationTimer);
+			}
+			append(this.element, this.body);
+		} else {
+			this.animationTimer = window.setTimeout(() => {
+				this.body.remove();
+			}, 200);
+		}
+
 		this._onDidChange.fire(expanded ? this.expandedSize : undefined);
+		return true;
 	}
 
 	get headerVisible(): boolean {
@@ -145,7 +159,7 @@ export abstract class Panel implements IView {
 
 		this._headerVisible = !!visible;
 		this.updateHeader();
-		this._onDidChange.fire();
+		this._onDidChange.fire(undefined);
 	}
 
 	render(): void {
@@ -157,43 +171,37 @@ export abstract class Panel implements IView {
 		this.renderHeader(this.header);
 
 		const focusTracker = trackFocus(this.header);
-		focusTracker.onDidFocus(() => addClass(this.header, 'focused'));
-		focusTracker.onDidBlur(() => removeClass(this.header, 'focused'));
+		this._register(focusTracker);
+		this._register(focusTracker.onDidFocus(() => addClass(this.header, 'focused'), null));
+		this._register(focusTracker.onDidBlur(() => removeClass(this.header, 'focused'), null));
 
 		this.updateHeader();
 
-		const onHeaderKeyDown = chain(domEvent(this.header, 'keydown'))
+		const onHeaderKeyDown = Event.chain(domEvent(this.header, 'keydown'))
 			.map(e => new StandardKeyboardEvent(e));
 
-		onHeaderKeyDown.filter(e => e.keyCode === KeyCode.Enter || e.keyCode === KeyCode.Space)
-			.event(() => this.setExpanded(!this.isExpanded()), null, this.disposables);
+		this._register(onHeaderKeyDown.filter(e => e.keyCode === KeyCode.Enter || e.keyCode === KeyCode.Space)
+			.event(() => this.setExpanded(!this.isExpanded()), null));
 
-		onHeaderKeyDown.filter(e => e.keyCode === KeyCode.LeftArrow)
-			.event(() => this.setExpanded(false), null, this.disposables);
+		this._register(onHeaderKeyDown.filter(e => e.keyCode === KeyCode.LeftArrow)
+			.event(() => this.setExpanded(false), null));
 
-		onHeaderKeyDown.filter(e => e.keyCode === KeyCode.RightArrow)
-			.event(() => this.setExpanded(true), null, this.disposables);
+		this._register(onHeaderKeyDown.filter(e => e.keyCode === KeyCode.RightArrow)
+			.event(() => this.setExpanded(true), null));
 
-		domEvent(this.header, 'click')
-			(() => this.setExpanded(!this.isExpanded()), null, this.disposables);
+		this._register(domEvent(this.header, 'click')
+			(() => this.setExpanded(!this.isExpanded()), null));
 
-		// TODO@Joao move this down to panelview
-		// onHeaderKeyDown.filter(e => e.keyCode === KeyCode.UpArrow)
-		// 	.event(focusPrevious, this, this.disposables);
-
-		// onHeaderKeyDown.filter(e => e.keyCode === KeyCode.DownArrow)
-		// 	.event(focusNext, this, this.disposables);
-
-		const body = append(this.element, $('.panel-body'));
-		this.renderBody(body);
+		this.body = append(this.element, $('.panel-body'));
+		this.renderBody(this.body);
 	}
 
-	layout(size: number): void {
+	layout(height: number): void {
 		const headerSize = this.headerVisible ? Panel.HEADER_SIZE : 0;
-		this.layoutBody(size - headerSize);
 
 		if (this.isExpanded()) {
-			this.expandedSize = size;
+			this.layoutBody(height - headerSize, this.width);
+			this.expandedSize = height;
 		}
 	}
 
@@ -224,13 +232,7 @@ export abstract class Panel implements IView {
 
 	protected abstract renderHeader(container: HTMLElement): void;
 	protected abstract renderBody(container: HTMLElement): void;
-	protected abstract layoutBody(size: number): void;
-
-	dispose(): void {
-		this.disposables = dispose(this.disposables);
-
-		this._onDidChange.dispose();
-	}
+	protected abstract layoutBody(height: number, width: number): void;
 }
 
 interface IDndContext {
@@ -258,7 +260,7 @@ class PanelDraggable extends Disposable {
 	}
 
 	private onDragStart(e: DragEvent): void {
-		if (!this.dnd.canDrag(this.panel)) {
+		if (!this.dnd.canDrag(this.panel) || !e.dataTransfer) {
 			e.preventDefault();
 			e.stopPropagation();
 			return;
@@ -266,7 +268,7 @@ class PanelDraggable extends Disposable {
 
 		e.dataTransfer.effectAllowed = 'move';
 
-		const dragImage = append(document.body, $('.monaco-panel-drag-image', {}, this.panel.draggableElement.textContent));
+		const dragImage = append(document.body, $('.monaco-drag-image', {}, this.panel.draggableElement.textContent || ''));
 		e.dataTransfer.setDragImage(dragImage, -10, -10);
 		setTimeout(() => document.body.removeChild(dragImage), 0);
 
@@ -328,7 +330,7 @@ class PanelDraggable extends Disposable {
 	}
 
 	private render(): void {
-		let backgroundColor: string = null;
+		let backgroundColor: string | null = null;
 
 		if (this.dragOverCounter > 0) {
 			backgroundColor = (this.panel.dropBackground || PanelDraggable.DefaultDragOverBackgroundColor).toString();
@@ -365,12 +367,13 @@ interface IPanelItem {
 
 export class PanelView extends Disposable {
 
-	private dnd: IPanelDndController | null;
+	private dnd: IPanelDndController | undefined;
 	private dndContext: IDndContext = { draggable: null };
 	private el: HTMLElement;
 	private panelItems: IPanelItem[] = [];
+	private width: number;
 	private splitview: SplitView;
-	private animationTimer: number | null = null;
+	private animationTimer: number | undefined = undefined;
 
 	private _onDidDrop = this._register(new Emitter<{ from: Panel, to: Panel }>());
 	readonly onDidDrop: Event<{ from: Panel, to: Panel }> = this._onDidDrop.event;
@@ -387,24 +390,24 @@ export class PanelView extends Disposable {
 	}
 
 	addPanel(panel: Panel, size: number, index = this.splitview.length): void {
-		const disposables: IDisposable[] = [];
-		disposables.push(
-			// fix https://github.com/Microsoft/vscode/issues/37129 by delaying the listener
-			// for changes to animate them. lots of views cause a onDidChange during their
-			// initial creation and this causes the view to animate even though it shows
-			// for the first time. animation should only be used to indicate new elements
-			// are added or existing ones removed in a view that is already showing
-			scheduleAtNextAnimationFrame(() => panel.onDidChange(this.setupAnimation, this, disposables))
-		);
+		const disposables = new DisposableStore();
 
-		const panelItem = { panel, disposable: combinedDisposable(disposables) };
+		// https://github.com/Microsoft/vscode/issues/59950
+		let shouldAnimate = false;
+		disposables.add(scheduleAtNextAnimationFrame(() => shouldAnimate = true));
+
+		disposables.add(Event.filter(panel.onDidChange, () => shouldAnimate)
+			(this.setupAnimation, this));
+
+		const panelItem = { panel, disposable: disposables };
 		this.panelItems.splice(index, 0, panelItem);
+		panel.width = this.width;
 		this.splitview.addView(panel, size, index);
 
 		if (this.dnd) {
 			const draggable = new PanelDraggable(panel, this.dnd, this.dndContext);
-			disposables.push(draggable);
-			draggable.onDidDrop(this._onDidDrop.fire, this._onDidDrop, disposables);
+			disposables.add(draggable);
+			disposables.add(draggable.onDidDrop(this._onDidDrop.fire, this._onDidDrop));
 		}
 	}
 
@@ -454,8 +457,14 @@ export class PanelView extends Disposable {
 		return this.splitview.getViewSize(index);
 	}
 
-	layout(size: number): void {
-		this.splitview.layout(size);
+	layout(height: number, width: number): void {
+		this.width = width;
+
+		for (const panelItem of this.panelItems) {
+			panelItem.panel.width = width;
+		}
+
+		this.splitview.layout(height);
 	}
 
 	private setupAnimation(): void {
@@ -466,7 +475,7 @@ export class PanelView extends Disposable {
 		addClass(this.el, 'animated');
 
 		this.animationTimer = window.setTimeout(() => {
-			this.animationTimer = null;
+			this.animationTimer = undefined;
 			removeClass(this.el, 'animated');
 		}, 200);
 	}

@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as path from 'path';
 import * as fs from 'fs';
@@ -196,11 +195,12 @@ function escapePath(p: string) {
 }
 
 function resolveWorkspaceRoot(activeDoc: TextDocument, workspaceFolders: WorkspaceFolder[]): string | undefined {
-	for (let i = 0; i < workspaceFolders.length; i++) {
-		if (startsWith(activeDoc.uri, workspaceFolders[i].uri)) {
-			return path.resolve(URI.parse(workspaceFolders[i].uri).fsPath);
+	for (const folder of workspaceFolders) {
+		if (startsWith(activeDoc.uri, folder.uri)) {
+			return path.resolve(URI.parse(folder.uri).fsPath);
 		}
 	}
+	return undefined;
 }
 
 function shiftPosition(pos: Position, offset: number): Position {

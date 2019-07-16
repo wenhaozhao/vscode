@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as editorCommon from 'vs/editor/common/editorCommon';
 import { Selection } from 'vs/editor/common/core/selection';
@@ -13,10 +12,10 @@ import { ITextModel } from 'vs/editor/common/model';
 
 export class DragAndDropCommand implements editorCommon.ICommand {
 
-	private selection: Selection;
-	private targetPosition: Position;
+	private readonly selection: Selection;
+	private readonly targetPosition: Position;
 	private targetSelection: Selection;
-	private copy: boolean;
+	private readonly copy: boolean;
 
 	constructor(selection: Selection, targetPosition: Position, copy: boolean) {
 		this.selection = selection;
@@ -92,7 +91,7 @@ export class DragAndDropCommand implements editorCommon.ICommand {
 					this.selection.endColumn
 			);
 		} else {
-			// The target position is before the selection's end postion. Since the selection doesn't contain the target position, the selection is one-line and target position is before this selection.
+			// The target position is before the selection's end position. Since the selection doesn't contain the target position, the selection is one-line and target position is before this selection.
 			this.targetSelection = new Selection(
 				this.targetPosition.lineNumber - this.selection.endLineNumber + this.selection.startLineNumber,
 				this.targetPosition.column,

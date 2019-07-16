@@ -8,38 +8,35 @@
 	z-index: 10;
 	position: absolute;
 	top: 0;
-	right: 28px;
+	right: 18px;
 	width: 220px;
 	max-width: calc(100% - 28px - 28px - 8px);
 	pointer-events: none;
+	padding: 0 10px 10px;
 }
 
 .monaco-workbench .simple-find-part {
+	visibility: hidden;		/* Use visibility to maintain flex layout while hidden otherwise interferes with transition */
 	z-index: 10;
 	position: relative;
-	top: -40px;
+	top: -45px;
 	display: flex;
 	padding: 4px;
 	align-items: center;
 	pointer-events: all;
-
-	-webkit-transition: top 200ms linear;
-	-o-transition: top 200ms linear;
-	-moz-transition: top 200ms linear;
-	-ms-transition: top 200ms linear;
 	transition: top 200ms linear;
 }
 
 .monaco-workbench .simple-find-part.visible {
+	visibility: visible;
+}
+
+.monaco-workbench .simple-find-part.visible-transition {
 	top: 0;
 }
 
 .monaco-workbench .simple-find-part .monaco-findInput {
 	flex: 1;
-}
-
-.monaco-workbench .simple-find-part .monaco-findInput .monaco-inputbox .wrapper .input {
-	width: 100% !important;
 }
 
 .monaco-workbench .simple-find-part .button {
@@ -55,25 +52,25 @@
 }
 
 .monaco-workbench .simple-find-part .button.previous {
-	background-image: url('images/previous.svg');
+	background-image: url('images/chevron-previous-light.svg');
 }
 
 .monaco-workbench .simple-find-part .button.next {
-	background-image: url('images/next.svg');
+	background-image: url('images/chevron-next-light.svg');
 }
 
 .monaco-workbench .simple-find-part .button.close-fw {
-	background-image: url('images/close.svg');
+	background-image: url('images/close-light.svg');
 }
 
 .hc-black .monaco-workbench .simple-find-part .button.previous,
 .vs-dark .monaco-workbench .simple-find-part .button.previous {
-	background-image: url('images/previous-inverse.svg');
+	background-image: url('images/chevron-previous-dark.svg');
 }
 
 .hc-black .monaco-workbench .simple-find-part .button.next,
 .vs-dark .monaco-workbench .simple-find-part .button.next {
-	background-image: url('images/next-inverse.svg');
+	background-image: url('images/chevron-next-dark.svg');
 }
 
 .hc-black .monaco-workbench .simple-find-part .button.close-fw,
@@ -81,7 +78,7 @@
 	background-image: url('images/close-dark.svg');
 }
 
-monaco-workbench .simple-find-part .button.disabled {
+.monaco-workbench .simple-find-part .button.disabled {
 	opacity: 0.3;
 	cursor: default;
 }

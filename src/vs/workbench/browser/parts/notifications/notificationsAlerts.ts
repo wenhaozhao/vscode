@@ -3,15 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import { alert } from 'vs/base/browser/ui/aria/aria';
 import { localize } from 'vs/nls';
 import { INotificationViewItem, INotificationsModel, NotificationChangeType, INotificationChangeEvent, NotificationViewItemLabelKind } from 'vs/workbench/common/notifications';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { toErrorMessage } from 'vs/base/common/errorMessage';
 import { Severity } from 'vs/platform/notification/common/notification';
-import { once } from 'vs/base/common/event';
+import { Event } from 'vs/base/common/event';
 
 export class NotificationsAlerts extends Disposable {
 
@@ -54,7 +52,7 @@ export class NotificationsAlerts extends Disposable {
 			}
 		});
 
-		once(notifiation.onDidClose)(() => listener.dispose());
+		Event.once(notifiation.onDidClose)(() => listener.dispose());
 
 		this.doTriggerAriaAlert(notifiation);
 	}

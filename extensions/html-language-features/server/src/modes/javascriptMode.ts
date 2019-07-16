@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { LanguageModelCache, getLanguageModelCache } from '../languageModelCache';
 import {
@@ -10,7 +9,7 @@ import {
 	Definition, TextEdit, TextDocument, Diagnostic, DiagnosticSeverity, Range, CompletionItemKind, Hover, MarkedString,
 	DocumentHighlight, DocumentHighlightKind, CompletionList, Position, FormattingOptions, FoldingRange, FoldingRangeKind
 } from 'vscode-languageserver-types';
-import { LanguageMode, Settings, Workspace } from './languageModes';
+import { LanguageMode, Settings } from './languageModes';
 import { getWordAtText, startsWith, isWhitespaceOnly, repeat } from '../utils/strings';
 import { HTMLDocumentRegions } from './embeddedSupport';
 
@@ -25,7 +24,7 @@ if (!ts.sys.fileExists(jquery_d_ts)) {
 	jquery_d_ts = join(__dirname, '../../lib/jquery.d.ts'); // from source
 }
 
-export function getJavaScriptMode(documentRegions: LanguageModelCache<HTMLDocumentRegions>, workspace: Workspace): LanguageMode {
+export function getJavaScriptMode(documentRegions: LanguageModelCache<HTMLDocumentRegions>): LanguageMode {
 	let jsDocuments = getLanguageModelCache<TextDocument>(10, 60, document => documentRegions.get(document).getEmbeddedDocument('javascript'));
 
 	let compilerOptions: ts.CompilerOptions = { allowNonTsExtensions: true, allowJs: true, lib: ['lib.es6.d.ts'], target: ts.ScriptTarget.Latest, moduleResolution: ts.ModuleResolutionKind.Classic };
@@ -59,7 +58,7 @@ export function getJavaScriptMode(documentRegions: LanguageModelCache<HTMLDocume
 			return {
 				getText: (start, end) => text.substring(start, end),
 				getLength: () => text.length,
-				getChangeRange: () => void 0
+				getChangeRange: () => undefined
 			};
 		},
 		getCurrentDirectory: () => '',
@@ -174,16 +173,17 @@ export function getJavaScriptMode(documentRegions: LanguageModelCache<HTMLDocume
 		},
 		findDocumentHighlight(document: TextDocument, position: Position): DocumentHighlight[] {
 			updateCurrentTextDocument(document);
-			let occurrences = jsLanguageService.getOccurrencesAtPosition(FILE_NAME, currentTextDocument.offsetAt(position));
-			if (occurrences) {
-				return occurrences.map(entry => {
-					return {
-						range: convertRange(currentTextDocument, entry.textSpan),
-						kind: <DocumentHighlightKind>(entry.isWriteAccess ? DocumentHighlightKind.Write : DocumentHighlightKind.Text)
-					};
-				});
+			const highlights = jsLanguageService.getDocumentHighlights(FILE_NAME, currentTextDocument.offsetAt(position), [FILE_NAME]);
+			const out: DocumentHighlight[] = [];
+			for (const entry of highlights || []) {
+				for (const highlight of entry.highlightSpans) {
+					out.push({
+						range: convertRange(currentTextDocument, highlight.textSpan),
+						kind: highlight.kind === 'writtenReference' ? DocumentHighlightKind.Write : DocumentHighlightKind.Text
+					});
+				}
 			}
-			return [];
+			return out;
 		},
 		findDocumentSymbols(document: TextDocument): SymbolInformation[] {
 			updateCurrentTextDocument(document);

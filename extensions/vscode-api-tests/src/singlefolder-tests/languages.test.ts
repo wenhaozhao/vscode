@@ -3,14 +3,26 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import * as assert from 'assert';
 import { join } from 'path';
 import * as vscode from 'vscode';
 import { createRandomFile } from '../utils';
 
 suite('languages namespace tests', () => {
+
+	const isWindows = process.platform === 'win32';
+
+	function positionToString(p: vscode.Position) {
+		return `[${p.character}/${p.line}]`;
+	}
+
+	function rangeToString(r: vscode.Range) {
+		return `[${positionToString(r.start)}/${positionToString(r.end)}]`;
+	}
+
+	function assertEqualRange(actual: vscode.Range, expected: vscode.Range, message?: string) {
+		assert.equal(rangeToString(actual), rangeToString(expected), message);
+	}
 
 	test('setTextDocumentLanguage -> close/open event', async function () {
 		const file = await createRandomFile('foo\nbar\nbar');
@@ -79,7 +91,32 @@ suite('languages namespace tests', () => {
 		assert.ok(found);
 	});
 
-	test('diagnostics & CodeActionProvider', function () {
+	test('link detector', async function () {
+		const uri = await createRandomFile('class A { // http://a.com }', undefined, '.java');
+		const doc = await vscode.workspace.openTextDocument(uri);
+
+		const target = vscode.Uri.file(isWindows ? 'c:\\foo\\bar' : '/foo/bar');
+		const range = new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 5));
+
+		const linkProvider: vscode.DocumentLinkProvider = {
+			provideDocumentLinks: _doc => {
+				return [new vscode.DocumentLink(range, target)];
+			}
+		};
+		vscode.languages.registerDocumentLinkProvider({ language: 'java', scheme: 'file' }, linkProvider);
+
+		const links = await vscode.commands.executeCommand<vscode.DocumentLink[]>('vscode.executeLinkProvider', doc.uri);
+		assert.equal(2, links && links.length);
+		let [link1, link2] = links!.sort((l1, l2) => l1.range.start.compareTo(l2.range.start));
+
+		assert.equal(target.toString(), link1.target && link1.target.toString());
+		assertEqualRange(range, link1.range);
+
+		assert.equal('http://a.com/', link2.target && link2.target.toString());
+		assertEqualRange(new vscode.Range(new vscode.Position(0, 13), new vscode.Position(0, 25)), link2.range);
+	});
+
+	test('diagnostics & CodeActionProvider', async function () {
 
 		class D2 extends vscode.Diagnostic {
 			customProp = { complex() { } };
@@ -95,7 +132,7 @@ suite('languages namespace tests', () => {
 		let uri = vscode.Uri.parse('ttt:path.far');
 
 		let r1 = vscode.languages.registerCodeActionsProvider({ pattern: '*.far', scheme: 'ttt' }, {
-			provideCodeActions(document, range, ctx): vscode.Command[] {
+			provideCodeActions(_document, _range, ctx): vscode.Command[] {
 
 				assert.equal(ctx.diagnostics.length, 2);
 				let [first, second] = ctx.diagnostics;
@@ -119,22 +156,20 @@ suite('languages namespace tests', () => {
 		let r4 = vscode.languages.createDiagnosticCollection();
 		r4.set(uri, [diag2]);
 
-		return vscode.workspace.openTextDocument(uri).then(doc => {
-			return vscode.commands.executeCommand('vscode.executeCodeActionProvider', uri, new vscode.Range(0, 0, 0, 10));
-		}).then(commands => {
-			assert.ok(ran);
-			vscode.Disposable.from(r1, r2, r3, r4).dispose();
-		});
+		await vscode.workspace.openTextDocument(uri);
+		await vscode.commands.executeCommand('vscode.executeCodeActionProvider', uri, new vscode.Range(0, 0, 0, 10));
+		assert.ok(ran);
+		vscode.Disposable.from(r1, r2, r3, r4).dispose();
 	});
 
-	test('completions with document filters', function () {
+	test('completions with document filters', async function () {
 		let ran = false;
 		let uri = vscode.Uri.file(join(vscode.workspace.rootPath || '', './bower.json'));
 
 		let jsonDocumentFilter = [{ language: 'json', pattern: '**/package.json' }, { language: 'json', pattern: '**/bower.json' }, { language: 'json', pattern: '**/.bower.json' }];
 
 		let r1 = vscode.languages.registerCompletionItemProvider(jsonDocumentFilter, {
-			provideCompletionItems: (document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.CompletionItem[] => {
+			provideCompletionItems: (_document: vscode.TextDocument, _position: vscode.Position, _token: vscode.CancellationToken): vscode.CompletionItem[] => {
 				let proposal = new vscode.CompletionItem('foo');
 				proposal.kind = vscode.CompletionItemKind.Property;
 				ran = true;
@@ -142,12 +177,11 @@ suite('languages namespace tests', () => {
 			}
 		});
 
-		return vscode.workspace.openTextDocument(uri).then(doc => {
-			return vscode.commands.executeCommand<vscode.CompletionList>('vscode.executeCompletionItemProvider', uri, new vscode.Position(1, 0));
-		}).then((result: vscode.CompletionList | undefined) => {
-			r1.dispose();
-			assert.ok(ran);
-			assert.equal(result!.items[0].label, 'foo');
-		});
+		await vscode.workspace.openTextDocument(uri);
+		const result = await vscode.commands.executeCommand<vscode.CompletionList>('vscode.executeCompletionItemProvider', uri, new vscode.Position(1, 0));
+		r1.dispose();
+		assert.ok(ran, 'Provider has not been invoked');
+		assert.ok(result!.items.some(i => i.label === 'foo'), 'Results do not include "foo"');
 	});
+
 });

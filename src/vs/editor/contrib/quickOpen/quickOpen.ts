@@ -3,8 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import { illegalArgument, onUnexpectedExternalError } from 'vs/base/common/errors';
 import { URI } from 'vs/base/common/uri';
 import { Range } from 'vs/editor/common/core/range';
@@ -13,8 +11,9 @@ import { registerLanguageCommand } from 'vs/editor/browser/editorExtensions';
 import { DocumentSymbol, DocumentSymbolProviderRegistry } from 'vs/editor/common/modes';
 import { IModelService } from 'vs/editor/common/services/modelService';
 import { CancellationToken } from 'vs/base/common/cancellation';
+import { ITextModelService } from 'vs/editor/common/services/resolverService';
 
-export function getDocumentSymbols(model: ITextModel, flat: boolean, token: CancellationToken): Thenable<DocumentSymbol[]> {
+export function getDocumentSymbols(model: ITextModel, flat: boolean, token: CancellationToken): Promise<DocumentSymbol[]> {
 
 	let roots: DocumentSymbol[] = [];
 
@@ -72,8 +71,20 @@ registerLanguageCommand('_executeDocumentSymbolProvider', function (accessor, ar
 		throw illegalArgument('resource');
 	}
 	const model = accessor.get(IModelService).getModel(resource);
-	if (!model) {
-		throw illegalArgument('resource');
+	if (model) {
+		return getDocumentSymbols(model, false, CancellationToken.None);
 	}
-	return getDocumentSymbols(model, false, CancellationToken.None);
+
+	return accessor.get(ITextModelService).createModelReference(resource).then(reference => {
+		return new Promise((resolve, reject) => {
+			try {
+				const result = getDocumentSymbols(reference.object.textEditorModel, false, CancellationToken.None);
+				resolve(result);
+			} catch (err) {
+				reject(err);
+			}
+		}).finally(() => {
+			reference.dispose();
+		});
+	});
 });
